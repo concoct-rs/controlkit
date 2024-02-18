@@ -3,144 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-mod quadrotor;
-
-pub struct System<M, F, S> {
-   pub model: M,
-    make_task: F,
-    state: Option<S>,
-}
-
-impl<M, F, S> System<M, F, S> {
-    pub fn new(model: M, make_task: F) -> Self {
-        Self {
-            model,
-            make_task,
-            state: None,
-        }
-    }
-
-    
-
-    pub fn build<T>(&mut self) -> T::Output
-    where
-        F: FnMut(&mut M) -> T,
-        T: Task<M, State = S>,
-    {
-        let mut task = (self.make_task)(&mut self.model);
-        let (output, state) = task.build(&mut self.model);
-        self.state = Some(state);
-        output
-    }
-
-    pub fn rebuild<T>(&mut self) -> T::Output
-    where
-        F: FnMut(&mut M) -> T,
-        T: Task<M, State = S>,
-    {
-        let mut task = (self.make_task)(&mut self.model);
-        task.rebuild(&mut self.model, self.state.as_mut().unwrap())
-    }
-}
-
-pub trait Task<M> {
-    type Output;
-
-    type State;
-
-    fn build(&mut self, model: &mut M) -> (Self::Output, Self::State);
-
-    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) -> Self::Output;
-
-    fn then<F, T>(self, f: F) -> Then<Self, F, T, M>
-    where
-        Self: Sized + 'static,
-        F: FnMut(&mut M, Self::Output) -> T + 'static,
-        T: Task<M> + 'static,
-        M: 'static,
-    {
-        Then {
-            task: self,
-            f,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<M> Task<M> for () {
-    type Output = ();
-
-    type State = ();
-
-    fn build(&mut self, _model: &mut M) -> (Self::Output, Self::State) {
-        ((), ())
-    }
-
-    fn rebuild(&mut self, _model: &mut M, _state: &mut Self::State) -> Self::Output {}
-}
-
-pub struct Then<T1, F, T2, M> {
-    task: T1,
-    f: F,
-    _marker: PhantomData<(T2, M)>,
-}
-
-impl<T1, F, T2, M> Task<M> for Then<T1, F, T2, M>
-where
-    T1: Task<M> + 'static,
-    F: FnMut(&mut M, T1::Output) -> T2 + 'static,
-    T2: Task<M> + 'static,
-    M: 'static,
-{
-    type Output = T2::Output;
-
-    type State = (T1::State, T2::State);
-
-    fn build(&mut self, model: &mut M) -> (Self::Output, Self::State) {
-        let (output, state) = self.task.build(model);
-        let mut next = (self.f)(model, output);
-        let (next_output, next_state) = next.build(model);
-        (next_output, (state, next_state))
-    }
-
-    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) -> Self::Output {
-        let output = self.task.rebuild(model, &mut state.0);
-        let mut next = (self.f)(model, output);
-        next.rebuild(model, &mut state.1)
-    }
-}
-
-pub fn from_fn<F, M, O>(f: F) -> FromFn<F, M>
-where
-    F: FnMut(&mut M) -> O,
-{
-    FromFn {
-        f,
-        _marker: PhantomData,
-    }
-}
-
-pub struct FromFn<F, M> {
-    f: F,
-    _marker: PhantomData<M>,
-}
-
-impl<F, M, O> Task<M> for FromFn<F, M>
-where
-    F: FnMut(&mut M) -> O,
-{
-    type Output = O;
-
-    type State = ();
-
-    fn build(&mut self, model: &mut M) -> (Self::Output, Self::State) {
-        ((self.f)(model), ())
-    }
-
-    fn rebuild(&mut self, model: &mut M, _state: &mut Self::State) -> Self::Output {
-        (self.f)(model)
-    }
-}
+use concoct::task::Task;
 
 pub fn pid_controller(value: f64, target: f64, kp: f64, ki: f64, kd: f64) -> PidController {
     PidController {
@@ -170,7 +33,11 @@ impl<M> Task<M> for PidController {
     type Output = f64;
     type State = PidControllerState;
 
-    fn build(&mut self, _model: &mut M) -> (Self::Output, Self::State) {
+    fn build(
+        &mut self,
+        cx: &concoct::task::Context<M, ()>,
+        model: &mut M,
+    ) -> (Self::Output, Self::State) {
         (
             0.,
             PidControllerState {
@@ -181,7 +48,12 @@ impl<M> Task<M> for PidController {
         )
     }
 
-    fn rebuild(&mut self, _model: &mut M, state: &mut Self::State) -> Self::Output {
+    fn rebuild(
+        &mut self,
+        cx: &concoct::task::Context<M, ()>,
+        model: &mut M,
+        state: &mut Self::State,
+    ) -> Self::Output {
         let now = Instant::now();
         let elapsed = match state.last_instant {
             Some(last_time) => now.duration_since(last_time),
@@ -243,7 +115,11 @@ impl<M> Task<M> for PendulumPlant {
 
     type State = PendulumState;
 
-    fn build(&mut self, _model: &mut M) -> (Self::Output, Self::State) {
+    fn build(
+        &mut self,
+        cx: &concoct::task::Context<M, ()>,
+        model: &mut M,
+    ) -> (Self::Output, Self::State) {
         (
             0.,
             PendulumState {
@@ -254,7 +130,12 @@ impl<M> Task<M> for PendulumPlant {
         )
     }
 
-    fn rebuild(&mut self, _model: &mut M, state: &mut Self::State) -> Self::Output {
+    fn rebuild(
+        &mut self,
+        cx: &concoct::task::Context<M, ()>,
+        model: &mut M,
+        state: &mut Self::State,
+    ) -> Self::Output {
         let elapsed = Instant::now() - state.last_instant;
         state.last_instant = Instant::now();
 
