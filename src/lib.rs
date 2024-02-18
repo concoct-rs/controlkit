@@ -62,65 +62,54 @@ where
     }
 }
 
-pub fn pid_controller<M, F, T>(
+pub fn pid_controller(
     value: f64,
     target: f64,
     kp: f64,
     ki: f64,
     kd: f64,
-    f: F,
-) -> PidController<F, M, T>
-where
-    F: FnMut(&mut M, f64) -> T,
-    T: Task<M>,
+) -> PidController
+
 {
     PidController {
-        f,
+     
         value,
         target,
         kp,
         ki,
         kd,
-        _marker: PhantomData,
+        
     }
 }
 
-pub struct PidControllerState<T> {
-    total_error: f64,
-    last_error: f64,
-    last_instant: Option<Instant>,
-    inner: T,
+pub struct PidControllerState {
+    pub total_error: f64,
+    pub last_error: f64,
+    pub last_instant: Option<Instant>,
+    pub output: f64
 }
 
-pub struct PidController<F, M, T> {
-    f: F,
+pub struct PidController {
+
     kp: f64,
     ki: f64,
     kd: f64,
     value: f64,
     target: f64,
-    _marker: PhantomData<(M, T)>,
 }
 
-impl<F, M, T> PidController<F, M, T> {}
 
-impl<M, F, T> Task<M> for PidController<F, M, T>
-where
-    F: FnMut(&mut M, f64) -> T,
-    T: Task<M>,
+impl<M> Task<M> for PidController
 {
-    type State = PidControllerState<T::State>;
+    type State = PidControllerState;
 
     fn build(&mut self, model: &mut M) -> Self::State {
-        let out = self.kp * (self.target - self.value);
-        let mut task = (self.f)(model, out);
-        let inner = task.build(model);
-
+    
         PidControllerState {
             total_error: 0.,
             last_error: 0.,
             last_instant: None,
-            inner,
+            output: 0.,
         }
     }
 
@@ -141,10 +130,8 @@ where
         let p = self.kp * error;
         let i = self.ki * state.total_error;
         let d = self.kd * error_delta;
-        let out = p + i + d;
+        state.output = p + i + d;
 
-        let mut task = (self.f)(model, out);
-        task.rebuild(model, &mut state.inner)
     }
 }
 
