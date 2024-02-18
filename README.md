@@ -1,7 +1,7 @@
 # Botkit
 
 ```rust
-use botkit::{pid_controller, PendulumPlant, Task};
+use botkit::{pid_controller, PendulumPlant, System, Task};
 
 #[derive(Default)]
 struct Model {
@@ -17,12 +17,12 @@ fn app(model: &mut Model) -> impl Task<Model> {
 }
 
 fn main() {
-    let mut model = Model::default();
-    let(_, mut state) = app(&mut model).build(&mut model);
+    let mut system = System::new(Model::default(), app);
+    system.build();
 
     for _ in 0..10000 {
-        app(&mut model).rebuild(&mut model, &mut state);
-        dbg!(model.state);
+        system.rebuild();
+        dbg!(system.model.state);
     }
 }
 ```

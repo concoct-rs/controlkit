@@ -5,6 +5,44 @@ use std::{
 
 mod quadrotor;
 
+pub struct System<M, F, S> {
+   pub model: M,
+    make_task: F,
+    state: Option<S>,
+}
+
+impl<M, F, S> System<M, F, S> {
+    pub fn new(model: M, make_task: F) -> Self {
+        Self {
+            model,
+            make_task,
+            state: None,
+        }
+    }
+
+    
+
+    pub fn build<T>(&mut self) -> T::Output
+    where
+        F: FnMut(&mut M) -> T,
+        T: Task<M, State = S>,
+    {
+        let mut task = (self.make_task)(&mut self.model);
+        let (output, state) = task.build(&mut self.model);
+        self.state = Some(state);
+        output
+    }
+
+    pub fn rebuild<T>(&mut self) -> T::Output
+    where
+        F: FnMut(&mut M) -> T,
+        T: Task<M, State = S>,
+    {
+        let mut task = (self.make_task)(&mut self.model);
+        task.rebuild(&mut self.model, self.state.as_mut().unwrap())
+    }
+}
+
 pub trait Task<M> {
     type Output;
 
