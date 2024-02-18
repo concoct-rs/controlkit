@@ -4,16 +4,18 @@ use std::{
 };
 
 pub trait Task<M> {
+    type Output;
+
     type State;
 
-    fn build(&mut self, model: &mut M) -> Self::State;
+    fn build(&mut self, model: &mut M) -> (Self::Output, Self::State);
 
-    fn rebuild(&mut self, model: &mut M, state: &mut Self::State);
+    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) -> Self::Output;
 
     fn then<F, T>(self, f: F) -> Then<Self, F, T, M>
     where
         Self: Sized + 'static,
-        F: FnMut(&mut M, &mut Self::State) -> T + 'static,
+        F: FnMut(&mut M, Self::Output) -> T + 'static,
         T: Task<M> + 'static,
         M: 'static,
     {
@@ -26,11 +28,19 @@ pub trait Task<M> {
 }
 
 impl<M> Task<M> for () {
+    type Output = ();
+    
     type State = ();
 
-    fn build(&mut self, model: &mut M) -> Self::State {}
+    fn build(&mut self, model: &mut M) -> (Self::Output, Self::State) {
+        ((), ())
+    }
 
-    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) {}
+    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) -> Self::Output {
+      
+    }
+
+    
 }
 
 pub struct Then<T1, F, T2, M> {
@@ -42,23 +52,28 @@ pub struct Then<T1, F, T2, M> {
 impl<T1, F, T2, M> Task<M> for Then<T1, F, T2, M>
 where
     T1: Task<M> + 'static,
-    F: FnMut(&mut M, &mut T1::State) -> T2 + 'static,
+    F: FnMut(&mut M, T1::Output) -> T2 + 'static,
     T2: Task<M> + 'static,
     M: 'static,
 {
+    type Output = T2::Output;
+
     type State = (T1::State, T2::State);
+    
 
-    fn build(&mut self, model: &mut M) -> Self::State {
-        let mut state = self.task.build(model);
-        let mut next = (self.f)(model, &mut state);
-        let next_state = next.build(model);
-        (state, next_state)
-    }
+   fn build(&mut self, model: &mut M) -> (Self::Output, Self::State) {
+   
+        let  (output, mut state) = self.task.build(model);
+        let mut next = (self.f)(model, output);
+        let (next_output, next_state) = next.build(model);
+        (next_output, (state, next_state))
 
-    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) {
-        self.task.rebuild(model, &mut state.0);
-        let mut next = (self.f)(model, &mut state.0);
-        next.rebuild(model, &mut state.1);
+   }
+
+    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) -> Self::Output {
+       let output= self.task.rebuild(model, &mut state.0);
+        let mut next = (self.f)(model, output);
+        next.rebuild(model, &mut state.1)
     }
 }
 
@@ -86,7 +101,7 @@ pub struct PidControllerState {
     pub total_error: f64,
     pub last_error: f64,
     pub last_instant: Option<Instant>,
-    pub output: f64
+  
 }
 
 pub struct PidController {
@@ -101,19 +116,20 @@ pub struct PidController {
 
 impl<M> Task<M> for PidController
 {
+    type Output = f64;
     type State = PidControllerState;
 
-    fn build(&mut self, model: &mut M) -> Self::State {
+    fn build(&mut self, model: &mut M) -> (Self::Output,Self::State) {
     
-        PidControllerState {
+        (0., PidControllerState {
             total_error: 0.,
             last_error: 0.,
             last_instant: None,
-            output: 0.,
-        }
+            
+        })
     }
 
-    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) {
+    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) -> Self::Output {
         let now = Instant::now();
         let elapsed = match state.last_instant {
             Some(last_time) => now.duration_since(last_time),
@@ -130,7 +146,7 @@ impl<M> Task<M> for PidController
         let p = self.kp * error;
         let i = self.ki * state.total_error;
         let d = self.kd * error_delta;
-        state.output = p + i + d;
+         p + i + d
 
     }
 }
@@ -172,22 +188,24 @@ impl PendulumPlant {
 }
 
 impl<M> Task<M> for PendulumPlant {
+    type Output = f64;
+
     type State = PendulumState;
 
-    fn build(&mut self, model: &mut M) -> Self::State {
-        PendulumState {
+    fn build(&mut self, model: &mut M) -> (Self::Output, Self::State ){
+        (0.,PendulumState {
             angle: 0.,
             angular_velocity: 1.,
             last_instant: Instant::now(),
-        }
+        })
     }
 
-    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) {
+    fn rebuild(&mut self, model: &mut M, state: &mut Self::State)-> Self::Output {
         let elapsed = Instant::now() - state.last_instant;
         state.last_instant = Instant::now();
 
         let elapsed_ms = (elapsed.as_millis() as f64).max(1.0);
         self.update(state, elapsed_ms);
-        dbg!(state.angular_velocity);
+        state.angle
     }
 }
