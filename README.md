@@ -1,7 +1,27 @@
-# Botkit
+<div align="center">
+  <h1>Controlkit</h1>
+
+ <a href="https://crates.io/crates/controlkit">
+    <img src="https://img.shields.io/crates/v/controlkit?style=flat-square"
+    alt="Crates.io version" />
+  </a>
+  <a href="https://docs.rs/controlkit">
+    <img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square"
+      alt="docs.rs docs" />
+  </a>
+   <a href="https://github.com/concoct-rs/controlkit/actions">
+    <img src="https://github.com/concoct-rs/concoct/actions/workflows/rust.yml/badge.svg"
+      alt="CI status" />
+  </a>
+</div>
+
+<br />
+
+Controlkit is a model-based robotics framework.
 
 ```rust
-use botkit::{pid_controller, PendulumPlant, System, Task};
+use concoct::{task::Task, System};
+use controlkit::{pid_controller, PendulumPlant};
 
 #[derive(Default)]
 struct Model {
