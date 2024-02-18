@@ -3,6 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod quadrotor;
+
 pub trait Task<M> {
     type Output;
 
@@ -29,18 +31,14 @@ pub trait Task<M> {
 
 impl<M> Task<M> for () {
     type Output = ();
-    
+
     type State = ();
 
-    fn build(&mut self, model: &mut M) -> (Self::Output, Self::State) {
+    fn build(&mut self, _model: &mut M) -> (Self::Output, Self::State) {
         ((), ())
     }
 
-    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) -> Self::Output {
-      
-    }
-
-    
+    fn rebuild(&mut self, _model: &mut M, _state: &mut Self::State) -> Self::Output {}
 }
 
 pub struct Then<T1, F, T2, M> {
@@ -59,41 +57,60 @@ where
     type Output = T2::Output;
 
     type State = (T1::State, T2::State);
-    
 
-   fn build(&mut self, model: &mut M) -> (Self::Output, Self::State) {
-   
-        let  (output, mut state) = self.task.build(model);
+    fn build(&mut self, model: &mut M) -> (Self::Output, Self::State) {
+        let (output, state) = self.task.build(model);
         let mut next = (self.f)(model, output);
         let (next_output, next_state) = next.build(model);
         (next_output, (state, next_state))
-
-   }
+    }
 
     fn rebuild(&mut self, model: &mut M, state: &mut Self::State) -> Self::Output {
-       let output= self.task.rebuild(model, &mut state.0);
+        let output = self.task.rebuild(model, &mut state.0);
         let mut next = (self.f)(model, output);
         next.rebuild(model, &mut state.1)
     }
 }
 
-pub fn pid_controller(
-    value: f64,
-    target: f64,
-    kp: f64,
-    ki: f64,
-    kd: f64,
-) -> PidController
-
+pub fn from_fn<F, M, O>(f: F) -> FromFn<F, M>
+where
+    F: FnMut(&mut M) -> O,
 {
+    FromFn {
+        f,
+        _marker: PhantomData,
+    }
+}
+
+pub struct FromFn<F, M> {
+    f: F,
+    _marker: PhantomData<M>,
+}
+
+impl<F, M, O> Task<M> for FromFn<F, M>
+where
+    F: FnMut(&mut M) -> O,
+{
+    type Output = O;
+
+    type State = ();
+
+    fn build(&mut self, model: &mut M) -> (Self::Output, Self::State) {
+        ((self.f)(model), ())
+    }
+
+    fn rebuild(&mut self, model: &mut M, _state: &mut Self::State) -> Self::Output {
+        (self.f)(model)
+    }
+}
+
+pub fn pid_controller(value: f64, target: f64, kp: f64, ki: f64, kd: f64) -> PidController {
     PidController {
-     
         value,
         target,
         kp,
         ki,
         kd,
-        
     }
 }
 
@@ -101,11 +118,9 @@ pub struct PidControllerState {
     pub total_error: f64,
     pub last_error: f64,
     pub last_instant: Option<Instant>,
-  
 }
 
 pub struct PidController {
-
     kp: f64,
     ki: f64,
     kd: f64,
@@ -113,23 +128,22 @@ pub struct PidController {
     target: f64,
 }
 
-
-impl<M> Task<M> for PidController
-{
+impl<M> Task<M> for PidController {
     type Output = f64;
     type State = PidControllerState;
 
-    fn build(&mut self, model: &mut M) -> (Self::Output,Self::State) {
-    
-        (0., PidControllerState {
-            total_error: 0.,
-            last_error: 0.,
-            last_instant: None,
-            
-        })
+    fn build(&mut self, _model: &mut M) -> (Self::Output, Self::State) {
+        (
+            0.,
+            PidControllerState {
+                total_error: 0.,
+                last_error: 0.,
+                last_instant: None,
+            },
+        )
     }
 
-    fn rebuild(&mut self, model: &mut M, state: &mut Self::State) -> Self::Output {
+    fn rebuild(&mut self, _model: &mut M, state: &mut Self::State) -> Self::Output {
         let now = Instant::now();
         let elapsed = match state.last_instant {
             Some(last_time) => now.duration_since(last_time),
@@ -146,8 +160,7 @@ impl<M> Task<M> for PidController
         let p = self.kp * error;
         let i = self.ki * state.total_error;
         let d = self.kd * error_delta;
-         p + i + d
-
+        p + i + d
     }
 }
 
@@ -192,15 +205,18 @@ impl<M> Task<M> for PendulumPlant {
 
     type State = PendulumState;
 
-    fn build(&mut self, model: &mut M) -> (Self::Output, Self::State ){
-        (0.,PendulumState {
-            angle: 0.,
-            angular_velocity: 1.,
-            last_instant: Instant::now(),
-        })
+    fn build(&mut self, _model: &mut M) -> (Self::Output, Self::State) {
+        (
+            0.,
+            PendulumState {
+                angle: 0.,
+                angular_velocity: 1.,
+                last_instant: Instant::now(),
+            },
+        )
     }
 
-    fn rebuild(&mut self, model: &mut M, state: &mut Self::State)-> Self::Output {
+    fn rebuild(&mut self, _model: &mut M, state: &mut Self::State) -> Self::Output {
         let elapsed = Instant::now() - state.last_instant;
         state.last_instant = Instant::now();
 

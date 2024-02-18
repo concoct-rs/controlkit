@@ -15,7 +15,7 @@ fn app(model: &mut Model) -> impl Task<Model> {
 
 fn main() {
     let mut model = Model::default();
-    let(_, mut state) = app(&mut model).build(&mut model);
+    let (_, mut state) = app(&mut model).build(&mut model);
 
     for _ in 0..10000 {
         app(&mut model).rebuild(&mut model, &mut state);
